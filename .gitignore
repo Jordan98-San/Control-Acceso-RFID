@@ -1,0 +1,15 @@
+# Compilacion de Maven
+target/
+
+# Reportes generados por la demo
+reportes/
+
+# IDEs (los archivos de Eclipse ya versionados se mantienen; ver README)
+.idea/
+*.iml
+.vscode/
+bin/
+
+# Sistema operativo
+.DS_Store
+Thumbs.db

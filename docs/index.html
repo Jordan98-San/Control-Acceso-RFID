@@ -1,0 +1,1321 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Control de Acceso RFID</title>
+<meta name="description" content="Demo de un sistema de control de acceso por tarjetas RFID para obras de construccion, en Java 21: arquitectura, capturas, guia de uso y decisiones de diseno.">
+<style>
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --surface-2: #f0f2f5;
+  --text: #1c2230;
+  --muted: #5b6475;
+  --border: #dfe3ea;
+  --accent: #d97706;
+  --accent-soft: #fdf3e2;
+  --accent-text: #9a4f00;
+  --ok: #157347;
+  --ok-soft: #e5f4ec;
+  --bad: #b42318;
+  --bad-soft: #fdecea;
+  --info: #1d4ed8;
+  --info-soft: #e8eefc;
+  --code-bg: #1f2430;
+  --code-text: #e6e9ef;
+  --l-ui: #e8eefc;      --l-ui-b: #93a8e6;
+  --l-svc: #fdf3e2;     --l-svc-b: #e4b064;
+  --l-repo: #e5f4ec;    --l-repo-b: #7cc39c;
+  --l-model: #f1eafb;   --l-model-b: #b39ae0;
+  --l-side: #f0f2f5;    --l-side-b: #b5bcc8;
+  --shadow: 0 1px 2px rgba(16,24,40,.06), 0 1px 3px rgba(16,24,40,.08);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12151b; --surface: #1a1e26; --surface-2: #222733; --text: #e7eaf0; --muted: #9aa3b4;
+    --border: #2e3442; --accent: #f59e0b; --accent-soft: #33260f; --accent-text: #fbbf57;
+    --ok: #4ade80; --ok-soft: #12291c; --bad: #f87171; --bad-soft: #321718; --info: #8fb0ff; --info-soft: #182340;
+    --code-bg: #0d1016; --code-text: #e6e9ef;
+    --l-ui: #182340; --l-ui-b: #3d5aa8; --l-svc: #33260f; --l-svc-b: #8a6420; --l-repo: #12291c; --l-repo-b: #2f7a51;
+    --l-model: #261c3a; --l-model-b: #6a52a0; --l-side: #222733; --l-side-b: #4a5264;
+    --shadow: 0 1px 2px rgba(0,0,0,.4);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12151b; --surface: #1a1e26; --surface-2: #222733; --text: #e7eaf0; --muted: #9aa3b4;
+  --border: #2e3442; --accent: #f59e0b; --accent-soft: #33260f; --accent-text: #fbbf57;
+  --ok: #4ade80; --ok-soft: #12291c; --bad: #f87171; --bad-soft: #321718; --info: #8fb0ff; --info-soft: #182340;
+  --code-bg: #0d1016; --code-text: #e6e9ef;
+  --l-ui: #182340; --l-ui-b: #3d5aa8; --l-svc: #33260f; --l-svc-b: #8a6420; --l-repo: #12291c; --l-repo-b: #2f7a51;
+  --l-model: #261c3a; --l-model-b: #6a52a0; --l-side: #222733; --l-side-b: #4a5264;
+  --shadow: 0 1px 2px rgba(0,0,0,.4);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 72px; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--info); }
+code, pre, kbd { font-family: ui-monospace, "SFMono-Regular", "JetBrains Mono", Menlo, Consolas, monospace; }
+:not(pre) > code {
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 5px;
+  padding: .05em .35em; font-size: .88em; overflow-wrap: anywhere;
+}
+img { max-width: 100%; display: block; }
+
+/* ---------- Barra superior ---------- */
+.topbar {
+  position: sticky; top: 0; z-index: 20; background: color-mix(in srgb, var(--surface) 88%, transparent);
+  backdrop-filter: blur(8px); border-bottom: 1px solid var(--border);
+}
+.topbar .wrap { display: flex; align-items: center; gap: 12px; height: 56px; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 700; text-decoration: none; color: var(--text); white-space: nowrap; }
+.brand-mark {
+  width: 30px; height: 30px; border-radius: 8px; background: var(--accent); display: grid; place-items: center;
+}
+.brand-mark svg { width: 18px; height: 18px; }
+.topbar .spacer { flex: 1; }
+.icon-btn {
+  border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 8px;
+  height: 36px; padding: 0 12px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+  font: inherit; font-size: 14px; text-decoration: none;
+}
+.icon-btn:hover { background: var(--surface-2); }
+.icon-btn svg { width: 16px; height: 16px; }
+
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 16px; }
+
+/* ---------- Hero ---------- */
+.hero { padding: 48px 0 32px; border-bottom: 1px solid var(--border); background:
+  linear-gradient(180deg, var(--accent-soft), transparent 70%); }
+.status {
+  display: inline-flex; gap: 8px; align-items: center; font-size: 13px; font-weight: 600;
+  color: var(--accent-text); background: var(--accent-soft); border: 1px solid var(--accent);
+  border-radius: 999px; padding: 3px 12px;
+}
+.status::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+.hero h1 { font-size: clamp(30px, 5vw, 46px); line-height: 1.12; margin: 16px 0 12px; letter-spacing: -.02em; }
+.hero p.lead { font-size: clamp(16px, 2.2vw, 19px); color: var(--muted); max-width: 760px; margin: 0 0 20px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 24px; }
+.chip {
+  font-size: 13px; border: 1px solid var(--border); background: var(--surface); border-radius: 6px;
+  padding: 3px 10px; color: var(--muted);
+}
+.chip b { color: var(--text); font-weight: 600; }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.btn {
+  display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; border-radius: 8px;
+  font-weight: 600; font-size: 15px; text-decoration: none; border: 1px solid var(--border);
+  background: var(--surface); color: var(--text);
+}
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #1c1302; }
+.btn:hover { filter: brightness(.97); }
+.hero-shot {
+  margin-top: 32px; border-radius: 12px; overflow: hidden; border: 1px solid var(--border);
+  box-shadow: 0 12px 32px rgba(16,24,40,.14);
+}
+
+/* ---------- Layout con indice lateral ---------- */
+.layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 40px; padding: 32px 0 64px; }
+.toc { position: sticky; top: 80px; align-self: start; max-height: calc(100vh - 100px); overflow: auto; font-size: 14px; }
+.toc p { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 8px; font-weight: 700; }
+.toc ol { list-style: none; margin: 0; padding: 0; counter-reset: toc; }
+.toc li { counter-increment: toc; }
+.toc a {
+  display: flex; gap: 8px; padding: 5px 10px; border-radius: 6px; color: var(--muted); text-decoration: none;
+  border-left: 2px solid transparent;
+}
+.toc a::before { content: counter(toc); font-variant-numeric: tabular-nums; min-width: 1.2em; opacity: .7; }
+.toc a:hover { color: var(--text); background: var(--surface-2); }
+.toc a.active { color: var(--accent-text); border-left-color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+
+main section { padding-top: 8px; margin-bottom: 56px; }
+main h2 { font-size: 28px; letter-spacing: -.01em; margin: 0 0 6px; display: flex; gap: 12px; align-items: baseline; }
+main h2 .num { color: var(--accent); font-variant-numeric: tabular-nums; font-size: .8em; }
+main h3 { font-size: 19px; margin: 28px 0 10px; }
+.sub { color: var(--muted); margin: 0 0 20px; }
+
+/* ---------- Tarjetas y grids ---------- */
+.grid { display: grid; gap: 14px; }
+.g2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.g3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; box-shadow: var(--shadow);
+}
+.card h4 { margin: 0 0 6px; font-size: 16px; }
+.card p { margin: 0; color: var(--muted); font-size: 15px; }
+.step-n {
+  width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 14px;
+  background: var(--accent-soft); color: var(--accent-text); border: 1px solid var(--accent); margin-bottom: 10px;
+}
+
+/* ---------- Tablas ---------- */
+.table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); box-shadow: var(--shadow); }
+table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { background: var(--surface-2); font-weight: 600; white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+.ok { color: var(--ok); font-weight: 600; }
+.bad { color: var(--bad); font-weight: 600; }
+.tag {
+  display: inline-block; font-size: 12px; font-weight: 700; padding: 1px 8px; border-radius: 999px; white-space: nowrap;
+}
+.tag.ok { background: var(--ok-soft); }
+.tag.bad { background: var(--bad-soft); }
+.tag.new { background: var(--accent-soft); color: var(--accent-text); }
+.tag.info { background: var(--info-soft); color: var(--info); }
+
+/* ---------- Galeria ---------- */
+.tabs { display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
+.tab {
+  border: 0; background: none; font: inherit; font-size: 15px; padding: 10px 14px; cursor: pointer; color: var(--muted);
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.tab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+.panel[hidden] { display: none; }
+.shot { border-radius: 10px; overflow: hidden; border: 1px solid var(--border); box-shadow: var(--shadow); background: var(--surface); }
+.shot a { display: block; cursor: zoom-in; }
+.caption { color: var(--muted); font-size: 14.5px; margin-top: 10px; }
+.pdf-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+.pdf-layout .shot { max-width: 460px; }
+
+/* ---------- Codigo ---------- */
+pre {
+  background: var(--code-bg); color: var(--code-text); border-radius: 10px; padding: 14px 16px; overflow-x: auto;
+  font-size: 13.5px; line-height: 1.55; margin: 0; position: relative;
+}
+.code { position: relative; }
+.copy {
+  position: absolute; top: 8px; right: 8px; font: 12px system-ui, sans-serif; border-radius: 6px; cursor: pointer;
+  border: 1px solid #3a4254; background: #2a3040; color: #cfd5e1; padding: 4px 8px;
+}
+.copy:hover { background: #343b4e; }
+pre .c { color: #8b95a7; }
+pre .k { color: #f5b955; }
+pre .s { color: #9fd59b; }
+pre .ok2 { color: #6ee7a0; }
+pre .bad2 { color: #ff8f86; }
+.terminal { border-radius: 10px; overflow: hidden; border: 1px solid #2e3442; }
+.terminal .bar { background: #2a3040; padding: 8px 12px; display: flex; gap: 6px; align-items: center; }
+.terminal .bar i { width: 10px; height: 10px; border-radius: 50%; background: #4a5264; display: block; }
+.terminal .bar span { color: #9aa3b4; font-size: 12px; margin-left: 8px; font-family: ui-monospace, monospace; }
+.terminal pre { border-radius: 0; }
+
+/* ---------- Arquitectura ---------- */
+.arch { display: grid; gap: 10px; }
+.layer { border-radius: 10px; padding: 14px 16px; border: 1.5px solid; }
+.layer .lname { font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.layer .ldesc { font-size: 14px; color: var(--muted); margin: 2px 0 10px; }
+.layer .boxes { display: flex; flex-wrap: wrap; gap: 8px; }
+.box {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 7px; padding: 5px 10px;
+  font: 13px ui-monospace, Menlo, Consolas, monospace;
+}
+.box.i::after { content: " «interfaz»"; color: var(--muted); font-size: 11px; }
+.l-ui { background: var(--l-ui); border-color: var(--l-ui-b); }
+.l-svc { background: var(--l-svc); border-color: var(--l-svc-b); }
+.l-repo { background: var(--l-repo); border-color: var(--l-repo-b); }
+.l-model { background: var(--l-model); border-color: var(--l-model-b); }
+.l-side { background: var(--l-side); border-color: var(--l-side-b); }
+.arrow { text-align: center; color: var(--muted); font-size: 13px; line-height: 1.2; }
+.arrow::before { content: "▼"; display: block; font-size: 14px; color: var(--l-side-b); }
+.arch-row { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 10px; align-items: start; }
+.layer .lname code { text-transform: none; letter-spacing: 0; }
+
+/* ---------- Flujo ---------- */
+.flow { list-style: none; margin: 0; padding: 0; position: relative; }
+.flow::before { content: ""; position: absolute; left: 15px; top: 8px; bottom: 8px; width: 2px; background: var(--border); }
+.flow li { position: relative; padding: 0 0 18px 48px; }
+.flow li::before {
+  content: attr(data-n); position: absolute; left: 0; top: 0; width: 32px; height: 32px; border-radius: 50%;
+  background: var(--surface); border: 2px solid var(--accent); color: var(--accent-text);
+  display: grid; place-items: center; font-weight: 700; font-size: 13px;
+}
+.flow .who { font: 600 14px ui-monospace, Menlo, Consolas, monospace; overflow-wrap: anywhere; }
+.flow .tag { white-space: normal; overflow-wrap: anywhere; }
+.flow .what { color: var(--muted); font-size: 15px; }
+.rules { margin-top: 8px; display: grid; gap: 6px; }
+.rule { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 14px; }
+.rule .q { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 2px 8px; }
+
+/* ---------- Arbol ---------- */
+.tree { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; font: 13.5px/1.75 ui-monospace, Menlo, Consolas, monospace; overflow-x: auto; box-shadow: var(--shadow); }
+.tree .row { display: flex; gap: 14px; white-space: nowrap; }
+.tree .name { white-space: pre; }
+.tree .dir { color: var(--accent-text); font-weight: 700; }
+.tree .note { color: var(--muted); font-family: system-ui, sans-serif; font-size: 13px; }
+
+/* ---------- Acordeon ---------- */
+details.acc { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 10px; box-shadow: var(--shadow); }
+details.acc > summary {
+  cursor: pointer; padding: 14px 18px; font-weight: 600; list-style: none; display: flex; gap: 10px; align-items: center;
+}
+details.acc > summary::-webkit-details-marker { display: none; }
+details.acc > summary::before { content: "›"; font-size: 20px; line-height: 1; color: var(--accent); transition: transform .15s; }
+details.acc[open] > summary::before { transform: rotate(90deg); }
+details.acc > summary code { font-weight: 600; }
+details.acc > summary .hint { color: var(--muted); font-weight: 400; font-size: 14px; }
+details.acc .body { padding: 0 18px 16px; border-top: 1px solid var(--border); }
+details.acc .body > :first-child { margin-top: 14px; }
+.file { margin: 14px 0; }
+.file h5 { margin: 0 0 4px; font: 600 14px ui-monospace, Menlo, Consolas, monospace; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.file p, .file ul { margin: 4px 0; color: var(--muted); font-size: 15px; }
+.file ul { padding-left: 20px; }
+
+/* ---------- BD ---------- */
+.er { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.ent { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; box-shadow: var(--shadow); }
+.ent h4 { margin: 0; padding: 8px 12px; background: var(--l-repo); border-bottom: 1px solid var(--l-repo-b); font: 700 14px ui-monospace, Menlo, Consolas, monospace; }
+.ent ul { list-style: none; margin: 0; padding: 6px 0; font: 13px ui-monospace, Menlo, Consolas, monospace; }
+.ent li { padding: 3px 12px; display: flex; justify-content: space-between; gap: 8px; }
+.ent li em { font-style: normal; font-size: 11px; color: var(--muted); }
+.ent li .pk { color: var(--accent-text); font-weight: 700; }
+.ent li .fk { color: var(--info); font-weight: 700; }
+
+/* ---------- Callouts ---------- */
+.note-box { border-left: 4px solid var(--accent); background: var(--accent-soft); padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 16px 0; font-size: 15px; }
+.note-box.info { border-left-color: var(--info); background: var(--info-soft); }
+.qa { display: grid; gap: 12px; }
+.qa .card h4 { color: var(--text); }
+.questions { counter-reset: q; display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.questions .card { position: relative; padding-left: 54px; }
+.questions .card::before {
+  counter-increment: q; content: counter(q); position: absolute; left: 16px; top: 15px; width: 26px; height: 26px; border-radius: 50%;
+  background: var(--accent); color: #1c1302; display: grid; place-items: center; font-weight: 800; font-size: 13px;
+}
+ul.check { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+ul.check li { padding-left: 26px; position: relative; }
+ul.check li::before { content: "–"; position: absolute; left: 6px; color: var(--accent); font-weight: 700; }
+
+footer { border-top: 1px solid var(--border); padding: 24px 0 40px; color: var(--muted); font-size: 14px; }
+
+
+/* ---------- Casos de uso ---------- */
+.uc-diagram { background: var(--surface); }
+.uc-diagram img { width: 100%; height: auto; }
+details.uc > summary { flex-wrap: wrap; }
+.tag.pend { background: var(--surface-2); color: var(--muted); border: 1px dashed var(--border); }
+.uc-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 20px; font-size: 14.5px; margin: 14px 0; }
+.uc-meta span, .uc-impl span { display: block; font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.uc-cols { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 20px; }
+.uc-cols h5 { margin: 0 0 6px; font-size: 14px; }
+.uc-steps, .uc-alt { margin: 0; padding-left: 20px; font-size: 14.5px; }
+.uc-steps li, .uc-alt li { margin: 3px 0; }
+.uc-impl { font-size: 14px; margin: 10px 0 0; overflow-wrap: anywhere; }
+.uc-impl span { display: inline; margin-right: 6px; }
+.uc-pend h4 { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.uc-pend .who-line { font-size: 13px; margin-bottom: 6px; }
+/* ---------- Mejoras ---------- */
+ul.mej { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 7px; }
+ul.mej li { display: grid; grid-template-columns: 58px minmax(0, 1fr) 22px; gap: 10px; align-items: start; font-size: 14.5px; }
+.prio { font-size: 11.5px; font-weight: 700; border-radius: 999px; padding: 1px 0; text-align: center; margin-top: 2px; }
+.prio.hi { background: var(--bad-soft); color: var(--bad); }
+.prio.mid { background: var(--accent-soft); color: var(--accent-text); }
+.prio.lo { background: var(--surface-2); color: var(--muted); }
+.eff { font: 700 12px ui-monospace, Menlo, monospace; color: var(--muted); text-align: right; margin-top: 2px; }
+.roadmap { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; counter-reset: f; }
+.roadmap li { background: var(--surface); border: 1px solid var(--border); border-top: 4px solid var(--accent); border-radius: 10px; padding: 14px 16px; box-shadow: var(--shadow); }
+.roadmap li b { display: block; margin-bottom: 6px; }
+.roadmap li span { color: var(--muted); font-size: 14.5px; }
+@media (max-width: 960px) { .roadmap { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .roadmap, .uc-meta, .uc-cols { grid-template-columns: minmax(0, 1fr); } }
+
+/* ---------- Lightbox ---------- */
+.lightbox { position: fixed; inset: 0; background: rgba(8,10,14,.86); display: none; place-items: center; z-index: 50; padding: 16px; cursor: zoom-out; }
+.lightbox.open { display: grid; }
+.lightbox img { max-width: min(1400px, 100%); max-height: 92vh; border-radius: 8px; }
+
+/* ---------- Responsive ---------- */
+@media (max-width: 960px) {
+  .layout { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .toc { display: none; }
+  .g3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .er { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pdf-layout { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 640px) {
+  .g2, .g3, .er, .questions, .arch-row { grid-template-columns: minmax(0, 1fr); }
+  .topbar .gh-label { display: none; }
+  main h2 { font-size: 23px; }
+  .hero { padding-top: 32px; }
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="wrap">
+    <a class="brand" href="#">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#1c1302" stroke-width="2.2" stroke-linecap="round"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M8 12a4 4 0 0 1 4-4M8 12a4 4 0 0 0 4 4M15 9.5a3 3 0 0 1 0 5"/></svg>
+      </span>
+      Control de Acceso RFID
+    </a>
+    <span class="spacer"></span>
+    <button class="icon-btn" id="theme" type="button" aria-label="Cambiar tema">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+    </button>
+    <a class="icon-btn" href="https://github.com/JacoJean07/Control-Acceso-RFID">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.7-1.6-2.7-.3-5.5-1.3-5.5-6 0-1.2.5-2.3 1.3-3.1-.2-.4-.6-1.6.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.7 18.3 5 18.3 5c.7 1.6.2 2.8.1 3.2.8.8 1.3 1.9 1.3 3.1 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .5z"/></svg>
+      <span class="gh-label">Ver en GitHub</span>
+    </a>
+  </div>
+</header>
+
+<div class="hero">
+  <div class="wrap">
+    <span class="status">Demo / Beta</span>
+    <h1>Control de acceso por tarjetas RFID para obras de construcción</h1>
+    <p class="lead">
+      Un trabajador acerca su tarjeta al lector de una zona. El sistema decide si puede entrar, guarda el registro,
+      detecta comportamientos sospechosos y genera reportes en PDF. Es un proyecto en Java 21 hecho como reto de
+      Programación Orientada a Objetos.
+    </p>
+    <div class="chips">
+      <span class="chip"><b>Java</b> 21</span>
+      <span class="chip"><b>Maven</b></span>
+      <span class="chip"><b>H2</b> en memoria</span>
+      <span class="chip"><b>JDBC</b> sin ORM</span>
+      <span class="chip"><b>Swing</b> + consola</span>
+      <span class="chip"><b>OpenPDF</b></span>
+      <span class="chip"><b>JUnit</b> 5 · 11 tests</span>
+    </div>
+    <div class="actions">
+      <a class="btn primary" href="#ejecutar">Cómo ejecutarlo</a>
+      <a class="btn" href="#capturas">Ver capturas</a>
+      <a class="btn" href="#casos-de-uso">Casos de uso</a>
+      <a class="btn" href="img/reporte-ejemplo.pdf">Reporte PDF de ejemplo</a>
+    </div>
+    <div class="hero-shot">
+      <img src="img/ventana-registros.png" alt="Ventana principal de la demo con el historial de accesos en verde y rojo" width="1960" height="1240">
+    </div>
+  </div>
+</div>
+
+<div class="wrap layout">
+  <nav class="toc" aria-label="Indice">
+    <p>Contenido</p>
+    <ol>
+      <li><a href="#que-hace">Qué hace</a></li>
+      <li><a href="#capturas">Capturas</a></li>
+      <li><a href="#ejecutar">Cómo ejecutarlo</a></li>
+      <li><a href="#guion">Guion de prueba</a></li>
+      <li><a href="#arquitectura">Arquitectura</a></li>
+      <li><a href="#flujo">Flujo de una lectura</a></li>
+      <li><a href="#estructura">Estructura</a></li>
+      <li><a href="#archivos">Archivo por archivo</a></li>
+      <li><a href="#bd">Base de datos</a></li>
+      <li><a href="#cambios">Cambios realizados</a></li>
+      <li><a href="#decisiones">Decisiones de diseño</a></li>
+      <li><a href="#limitaciones">Limitaciones</a></li>
+      <li><a href="#extender">Cómo extenderlo</a></li>
+      <li><a href="#preguntas">Preguntas abiertas</a></li>
+      <li><a href="#casos-de-uso">Casos de uso</a></li>
+      <li><a href="#mejoras">Posibles mejoras</a></li>
+    </ol>
+  </nav>
+
+  <main>
+
+<!-- =============================================================== -->
+<section id="que-hace">
+  <h2><span class="num">01</span> Qué hace el sistema</h2>
+  <p class="sub">En una obra hay zonas con distinto nivel de riesgo. Cada trabajador tiene una tarjeta y un nivel de acceso, y en la puerta de cada zona hay un lector.</p>
+
+  <div class="grid g3">
+    <div class="card"><div class="step-n">1</div><h4>Identifica la tarjeta</h4><p>Calcula el hash SHA-256 del UID. El código real de la tarjeta nunca se guarda.</p></div>
+    <div class="card"><div class="step-n">2</div><h4>Decide el acceso</h4><p>Revisa si la tarjeta existe, si está activa y si el nivel del trabajador alcanza el de la zona.</p></div>
+    <div class="card"><div class="step-n">3</div><h4>Registra el intento</h4><p>Guarda cada intento, exitoso o no, con el motivo exacto si se negó.</p></div>
+    <div class="card"><div class="step-n">4</div><h4>Detecta anomalías</h4><p>Genera alertas por tarjeta desconocida, tarjeta bloqueada, intentos repetidos y accesos fuera de horario.</p></div>
+    <div class="card"><div class="step-n">5</div><h4>Genera reportes</h4><p>Crea un PDF con el resumen, el historial de accesos y las alertas.</p></div>
+    <div class="card"><div class="step-n">6</div><h4>Sin hardware</h4><p>Un lector simulado permite probar todo desde la ventana o la consola.</p></div>
+  </div>
+
+  <h3>Alertas que detecta</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Alerta</th><th>Cuándo se dispara</th></tr></thead>
+      <tbody>
+        <tr><td><code>TARJETA_DESCONOCIDA</code></td><td>Se usa una tarjeta que no está registrada.</td></tr>
+        <tr><td><code>TARJETA_INACTIVA</code></td><td>Se usa una tarjeta bloqueada (por ejemplo, reportada como perdida).</td></tr>
+        <tr><td><code>INTENTOS_REPETIDOS</code></td><td>Hay 3 o más accesos denegados con la misma tarjeta en 5 minutos.</td></tr>
+        <tr><td><code>FUERA_DE_HORARIO</code></td><td>Se permite un acceso fuera de la jornada (06:00–20:00). La persona entra, pero queda la alerta.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- =============================================================== -->
+<section id="capturas">
+  <h2><span class="num">02</span> Capturas</h2>
+  <p class="sub">Capturas reales de la demo funcionando. Haz clic en una imagen para verla en grande.</p>
+
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" aria-selected="true" aria-controls="p-reg" id="t-reg">Registros</button>
+    <button class="tab" role="tab" aria-selected="false" aria-controls="p-ale" id="t-ale">Alertas</button>
+    <button class="tab" role="tab" aria-selected="false" aria-controls="p-tar" id="t-tar">Tarjetas</button>
+    <button class="tab" role="tab" aria-selected="false" aria-controls="p-pdf" id="t-pdf">Reporte PDF</button>
+    <button class="tab" role="tab" aria-selected="false" aria-controls="p-con" id="t-con">Consola</button>
+  </div>
+
+  <div class="panel" role="tabpanel" id="p-reg" aria-labelledby="t-reg">
+    <div class="shot"><a href="img/ventana-registros.png"><img src="img/ventana-registros.png" alt="Pestaña de registros de acceso" loading="lazy" width="1960" height="1240"></a></div>
+    <p class="caption">Arriba está el <b>simulador de lector</b>: eliges la tarjeta y la zona y presionas "Pasar tarjeta". El resultado aparece en verde o rojo con el motivo. Abajo está el historial; en este ejemplo, los tres intentos de Carlos al cuarto eléctrico disparan la alerta de intentos repetidos.</p>
+  </div>
+  <div class="panel" role="tabpanel" id="p-ale" aria-labelledby="t-ale" hidden>
+    <div class="shot"><a href="img/ventana-alertas.png"><img src="img/ventana-alertas.png" alt="Pestaña de alertas" loading="lazy" width="1960" height="1240"></a></div>
+    <p class="caption">Cada anomalía detectada aparece en la pestaña <b>Alertas</b>, con su tipo y su detalle.</p>
+  </div>
+  <div class="panel" role="tabpanel" id="p-tar" aria-labelledby="t-tar" hidden>
+    <div class="shot"><a href="img/ventana-tarjetas.png"><img src="img/ventana-tarjetas.png" alt="Pestaña de tarjetas" loading="lazy" width="1960" height="1240"></a></div>
+    <p class="caption">La pestaña <b>Tarjetas</b> muestra solo el inicio del hash, nunca el UID. Desde aquí se puede bloquear o activar una tarjeta y luego volver a probar el acceso.</p>
+  </div>
+  <div class="panel" role="tabpanel" id="p-pdf" aria-labelledby="t-pdf" hidden>
+    <div class="pdf-layout">
+      <div class="shot"><a href="img/reporte-ejemplo.pdf"><img src="img/reporte.png" alt="Primera página del reporte PDF" loading="lazy" width="910" height="1287"></a></div>
+      <div>
+        <p>El botón <b>"Generar reporte PDF"</b> crea un archivo en <code>reportes/</code> con:</p>
+        <ul class="check">
+          <li>Un resumen con el total de registros, permitidos, denegados y alertas.</li>
+          <li>La tabla de accesos, con el resultado en verde o rojo.</li>
+          <li>La tabla de alertas.</li>
+          <li>Encabezados que se repiten en cada página.</li>
+        </ul>
+        <p style="margin-top:16px"><a class="btn" href="img/reporte-ejemplo.pdf">Abrir el PDF de ejemplo</a></p>
+      </div>
+    </div>
+  </div>
+  <div class="panel" role="tabpanel" id="p-con" aria-labelledby="t-con" hidden>
+    <div class="terminal">
+      <div class="bar"><i></i><i></i><i></i><span>java -jar control-acceso-obras.jar --consola</span></div>
+<pre>=== Control de acceso RFID - Obra (modo consola) ===
+
+1) Pasar tarjeta
+2) Ver ultimos registros
+3) Ver alertas
+4) Generar reporte PDF
+0) Salir
+&gt; 1
+Tarjetas:
+  1) 04:A3:1F:7B  Carlos Perez (Obrero, nivel Basico)
+  2) 04:B7:22:9C  Ana Torres (Operador de maquinaria, nivel Restringido)
+  3) 04:C1:5E:03  Luis Mendoza (Electricista, nivel Critico)
+  4) 04:D9:8A:44  Sofia Ramirez (Supervisor, nivel Critico)
+  5) 04:E2:10:F5  Jorge Castillo (Visitante, nivel Basico)
+  6) Tarjeta desconocida (aleatoria)
+Tarjeta: 6
+Zonas:
+  1) Ingreso principal [Basico]
+  2) Bodega de materiales [Restringido]
+  3) Area de grua torre [Critico]
+  4) Cuarto electrico [Critico]
+Zona: 4
+Simular hora nocturna 23:00? (s/N): n
+<span class="bad2">&gt;&gt;&gt; DENEGADO - Desconocido -&gt; Cuarto electrico (Tarjeta no registrada)</span>
+<span class="k">    ALERTA TARJETA_DESCONOCIDA: Se intento ingresar con una tarjeta no registrada</span></pre>
+    </div>
+    <p class="caption">El <b>modo consola</b> hace lo mismo con un menú de texto. Sirve para probar rápido o en máquinas sin pantalla.</p>
+  </div>
+</section>
+
+<!-- =============================================================== -->
+<section id="ejecutar">
+  <h2><span class="num">03</span> Cómo ejecutarlo</h2>
+  <p class="sub">Requisitos: <b>JDK 21</b>, y Maven 3.9+ si se usa la terminal (Eclipse ya lo trae). No hace falta instalar ninguna base de datos.</p>
+
+  <div class="grid g3">
+    <div class="card">
+      <h4>A · Eclipse</h4>
+      <p>1. <code>File → Import → Maven → Existing Maven Projects</code>. Si el proyecto ya estaba importado: <code>Maven → Update Project…</code></p>
+      <p style="margin-top:8px">2. Abrir <code>Main.java</code> → <code>Run As → Java Application</code>.</p>
+      <p style="margin-top:8px">Para el modo consola, agregar <code>--consola</code> en <i>Run Configurations → Arguments</i>.</p>
+    </div>
+    <div class="card">
+      <h4>B · Maven</h4>
+      <p>Compila y ejecuta sin empaquetar. Es lo más cómodo mientras se desarrolla.</p>
+    </div>
+    <div class="card">
+      <h4>C · Jar ejecutable</h4>
+      <p><code>mvn package</code> genera un único jar con H2 y OpenPDF dentro, que se puede llevar a otra máquina con Java 21.</p>
+    </div>
+  </div>
+
+  <h3>Terminal</h3>
+  <div class="code">
+<pre><span class="c"># Opción B: ejecutar con Maven</span>
+mvn compile exec:java                               <span class="c"># abre la ventana</span>
+mvn compile exec:java -Dexec.args="--consola"       <span class="c"># modo texto</span>
+mvn test                                            <span class="c"># corre las 11 pruebas</span>
+
+<span class="c"># Opción C: jar ejecutable</span>
+mvn package
+java -jar target/control-acceso-obras-0.0.1-SNAPSHOT.jar
+java -jar target/control-acceso-obras-0.0.1-SNAPSHOT.jar --consola</pre>
+  </div>
+  <div class="note-box info">Si no hay pantalla disponible (por ejemplo, en un servidor), <code>Main</code> abre el modo consola automáticamente.</div>
+</section>
+
+<!-- =============================================================== -->
+<section id="guion">
+  <h2><span class="num">04</span> Guion para probar la demo</h2>
+  <p class="sub">Datos que se cargan al iniciar, desde <code>seed.sql</code>, y los escenarios que conviene probar.</p>
+
+  <div class="grid g2">
+    <div>
+      <h3 style="margin-top:0">Trabajadores y tarjetas</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>UID</th><th>Trabajador</th><th>Nivel</th><th>Tarjeta</th></tr></thead>
+          <tbody>
+            <tr><td><code>04:A3:1F:7B</code></td><td>Carlos Perez<br><small>Obrero</small></td><td>Básico</td><td><span class="tag ok">Activa</span></td></tr>
+            <tr><td><code>04:B7:22:9C</code></td><td>Ana Torres<br><small>Operador de maquinaria</small></td><td>Restringido</td><td><span class="tag ok">Activa</span></td></tr>
+            <tr><td><code>04:C1:5E:03</code></td><td>Luis Mendoza<br><small>Electricista</small></td><td>Crítico</td><td><span class="tag ok">Activa</span></td></tr>
+            <tr><td><code>04:D9:8A:44</code></td><td>Sofia Ramirez<br><small>Supervisor</small></td><td>Crítico</td><td><span class="tag ok">Activa</span></td></tr>
+            <tr><td><code>04:E2:10:F5</code></td><td>Jorge Castillo<br><small>Visitante</small></td><td>Básico</td><td><span class="tag bad">Bloqueada</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div>
+      <h3 style="margin-top:0">Zonas</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Código</th><th>Zona</th><th>Nivel requerido</th></tr></thead>
+          <tbody>
+            <tr><td><code>Z-ING</code></td><td>Ingreso principal</td><td>Básico</td></tr>
+            <tr><td><code>Z-BOD</code></td><td>Bodega de materiales</td><td>Restringido</td></tr>
+            <tr><td><code>Z-GRU</code></td><td>Área de grúa torre</td><td>Crítico</td></tr>
+            <tr><td><code>Z-ELE</code></td><td>Cuarto eléctrico</td><td>Crítico</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="caption">Regla: entra quien tenga un nivel <b>igual o mayor</b> al de la zona (Básico &lt; Restringido &lt; Crítico).</p>
+    </div>
+  </div>
+
+  <h3>Escenarios</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>#</th><th>Acción</th><th>Resultado esperado</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>Carlos → Ingreso principal</td><td><span class="ok">Permitido</span></td></tr>
+        <tr><td>2</td><td>Carlos → Cuarto eléctrico</td><td><span class="bad">Denegado</span>, nivel insuficiente</td></tr>
+        <tr><td>3</td><td>Repetir el paso 2 tres veces</td><td><span class="bad">Denegado</span> + alerta <code>INTENTOS_REPETIDOS</code></td></tr>
+        <tr><td>4</td><td>Jorge → Ingreso principal</td><td><span class="bad">Denegado</span>, tarjeta bloqueada + alerta <code>TARJETA_INACTIVA</code></td></tr>
+        <tr><td>5</td><td>"Tarjeta desconocida" → cualquier zona</td><td><span class="bad">Denegado</span> + alerta <code>TARJETA_DESCONOCIDA</code></td></tr>
+        <tr><td>6</td><td>Luis → Cuarto eléctrico con "Simular hora 23:00"</td><td><span class="ok">Permitido</span> + alerta <code>FUERA_DE_HORARIO</code></td></tr>
+        <tr><td>7</td><td>Pestaña Tarjetas → bloquear la de Carlos → repetir el paso 1</td><td><span class="bad">Denegado</span>, tarjeta bloqueada</td></tr>
+        <tr><td>8</td><td>Botón "Generar reporte PDF"</td><td>Se crea <code>reportes/reporte-AAAAMMDD-HHMMSS.pdf</code> y se abre</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- =============================================================== -->
+<section id="arquitectura">
+  <h2><span class="num">05</span> Arquitectura</h2>
+  <p class="sub">Arquitectura en capas: cada capa solo conoce a la de abajo, y siempre a través de interfaces.</p>
+
+  <div class="arch">
+    <div class="layer l-ui">
+      <div class="lname">Presentación · <code>ui</code></div>
+      <div class="ldesc">Muestra datos y captura acciones. No contiene reglas de negocio.</div>
+      <div class="boxes"><span class="box">VentanaPrincipal</span><span class="box">ConsolaApp</span></div>
+    </div>
+    <div class="arrow">usa</div>
+    <div class="arch-row">
+      <div class="layer l-svc">
+        <div class="lname">Servicios · <code>service</code></div>
+        <div class="ldesc">Reglas de negocio.</div>
+        <div class="boxes"><span class="box">ControlAccesoService</span><span class="box">DetectorAnomalias</span><span class="box">CriptoService</span><span class="box">ReporteService</span></div>
+      </div>
+      <div class="grid" style="gap:10px">
+        <div class="layer l-side">
+          <div class="lname">Lector · <code>reader</code></div>
+          <div class="ldesc">Avisa a la UI cuando lee una tarjeta (Observer).</div>
+          <div class="boxes"><span class="box i">LectorRFID</span><span class="box">SimuladorLectorRFID</span></div>
+        </div>
+        <div class="layer l-side">
+          <div class="lname">Reportes · <code>report</code></div>
+          <div class="ldesc">Formato de salida intercambiable (Strategy).</div>
+          <div class="boxes"><span class="box i">ReporteGenerator</span><span class="box">PdfReporteGenerator</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="arrow">usa (solo interfaces)</div>
+    <div class="layer l-repo">
+      <div class="lname">Persistencia · <code>repository</code></div>
+      <div class="ldesc">Contratos de acceso a datos, implementados con JDBC sobre H2.</div>
+      <div class="boxes">
+        <span class="box i">TrabajadorRepository</span><span class="box i">TarjetaRepository</span><span class="box i">ZonaRepository</span>
+        <span class="box i">RegistroRepository</span><span class="box i">AlertaRepository</span>
+      </div>
+      <div class="boxes" style="margin-top:8px">
+        <span class="box">Jdbc*Repository</span><span class="box">ConexionDB</span><span class="box">schema.sql / seed.sql</span>
+      </div>
+    </div>
+    <div class="grid g2" style="gap:10px">
+      <div class="layer l-model">
+        <div class="lname">Modelo · <code>model</code></div>
+        <div class="ldesc">Lo usan todas las capas y no depende de ninguna.</div>
+        <div class="boxes"><span class="box">Trabajador</span><span class="box">TarjetaRFID</span><span class="box">Zona</span><span class="box">RegistroAcceso</span><span class="box">Alerta</span><span class="box">enums</span></div>
+      </div>
+      <div class="layer l-side">
+        <div class="lname">Configuración · <code>config</code></div>
+        <div class="ldesc">Crea todos los objetos y los conecta. Es el único lugar con <code>new</code> de implementaciones.</div>
+        <div class="boxes"><span class="box">AppConfig</span><span class="box">Main</span></div>
+      </div>
+    </div>
+  </div>
+
+  <h3>Patrones y principios aplicados</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Patrón / principio</th><th>Dónde</th><th>Para qué</th></tr></thead>
+      <tbody>
+        <tr><td><b>Arquitectura en capas</b></td><td><code>ui</code>, <code>service</code>, <code>repository</code>, <code>model</code></td><td>Cambiar la UI no toca la lógica, y cambiar la BD no toca los servicios.</td></tr>
+        <tr><td><b>Repository</b></td><td><code>*Repository</code> + <code>jdbc/*</code></td><td>Esconder el SQL detrás de interfaces.</td></tr>
+        <tr><td><b>Inyección de dependencias</b> (manual)</td><td>Constructores + <code>AppConfig</code></td><td>Cada clase recibe lo que necesita y no hace <code>new</code> de sus dependencias. Facilita probar y reemplazar piezas.</td></tr>
+        <tr><td><b>Composition Root</b></td><td><code>AppConfig</code></td><td>Único lugar donde se eligen H2, PDF y el simulador.</td></tr>
+        <tr><td><b>Strategy</b></td><td><code>ReporteGenerator</code></td><td>Cambiar el formato del reporte sin tocar el servicio.</td></tr>
+        <tr><td><b>Observer</b></td><td><code>LectorRFID.setOyente()</code></td><td>El lector avisa cuando lee, en vez de que alguien le pregunte todo el tiempo.</td></tr>
+        <tr><td><b>Inversión de dependencias</b> (SOLID)</td><td>Servicios → interfaces</td><td>Los servicios no dependen de JDBC ni de OpenPDF.</td></tr>
+        <tr><td><b>Entidades vs. eventos</b></td><td>Clases vs. <code>record</code></td><td>Las entidades cambian con el tiempo; los eventos son inmutables.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- =============================================================== -->
+<section id="flujo">
+  <h2><span class="num">06</span> Flujo de una lectura, paso a paso</h2>
+  <p class="sub">Qué pasa por dentro cuando se presiona <b>"Pasar tarjeta"</b>.</p>
+
+  <ol class="flow">
+    <li data-n="1"><div class="who">VentanaPrincipal.pasarTarjeta()</div><div class="what">Toma la tarjeta y la zona elegidas en los combos.</div></li>
+    <li data-n="2"><div class="who">SimuladorLectorRFID.simularLectura(uid, "Z-BOD", hora)</div><div class="what">Crea un <code>LecturaRFID</code> y avisa al oyente registrado.</div></li>
+    <li data-n="3"><div class="who">ControlAccesoService.procesarLectura(lectura)</div><div class="what">Busca la zona por código. Si no existe, lanza un error.</div></li>
+    <li data-n="4"><div class="who">CriptoService.hashUid(uid)</div><div class="what">Normaliza el UID (<code>04:a3:1f:7b</code> → <code>04A31F7B</code>) y calcula su SHA-256.</div></li>
+    <li data-n="5"><div class="who">TarjetaRepository / TrabajadorRepository</div><div class="what">Busca la tarjeta por hash y su titular. Ambos devuelven <code>Optional</code>.</div></li>
+    <li data-n="6"><div class="who">evaluar(...)</div><div class="what">Aplica las reglas en orden; el primer "no" decide el resultado:</div>
+      <div class="rules">
+        <div class="rule"><span class="q">¿Existe la tarjeta?</span> no → <span class="tag bad">DENEGADO_TARJETA_DESCONOCIDA</span></div>
+        <div class="rule"><span class="q">¿Está activa?</span> no → <span class="tag bad">DENEGADO_TARJETA_INACTIVA</span></div>
+        <div class="rule"><span class="q">¿Nivel suficiente?</span> no → <span class="tag bad">DENEGADO_NIVEL_INSUFICIENTE</span></div>
+        <div class="rule"><span class="q">Pasa todo</span> → <span class="tag ok">PERMITIDO</span></div>
+      </div>
+    </li>
+    <li data-n="7"><div class="who">RegistroRepository.guardar(registro)</div><div class="what">Inserta el registro y recupera el id generado.</div></li>
+    <li data-n="8"><div class="who">DetectorAnomalias.analizar(registro)</div><div class="what">Devuelve las alertas que correspondan, que el servicio luego guarda con <code>AlertaRepository</code>.</div></li>
+    <li data-n="9"><div class="who">VentanaPrincipal.mostrarResultado(ResultadoLectura)</div><div class="what">Muestra el mensaje en verde o rojo y refresca las tablas.</div></li>
+  </ol>
+  <div class="note-box">La consola sigue exactamente el mismo flujo; solo cambia cómo se muestra el resultado. Por eso la lógica vive en los servicios y no en la UI.</div>
+</section>
+
+<!-- =============================================================== -->
+<section id="estructura">
+  <h2><span class="num">07</span> Estructura de carpetas</h2>
+  <p class="sub">Los nombres y paquetes son los que definió el autor original. <span class="tag new">NUEVO</span> marca los archivos que se agregaron.</p>
+<div class="tree">
+<div class="row"><span class="name">Control-Acceso-RFID/</span></div>
+<div class="row"><span class="name">├── pom.xml                       </span><span class="note">Dependencias y plugins de Maven</span></div>
+<div class="row"><span class="name">├── README.md                     </span><span class="note">Documentación completa</span></div>
+<div class="row"><span class="name">├── .gitignore                    </span><span class="note"><span class="tag new">NUEVO</span> ignora target/ y reportes/</span></div>
+<div class="row"><span class="name">├── docs/                         </span><span class="note"><span class="tag new">NUEVO</span> este sitio (GitHub Pages)</span></div>
+<div class="row"><span class="name">└── src/main/java/com/shadow/controlacceso/</span></div>
+<div class="row"><span class="name">    ├── Main.java                 </span><span class="note">Punto de entrada</span></div>
+<div class="row"><span class="name dir">    ├── config/                   </span><span class="note">AppConfig: arma y conecta los objetos</span></div>
+<div class="row"><span class="name dir">    ├── model/                    </span><span class="note">Trabajador, TarjetaRFID, Zona, RegistroAcceso, Alerta</span></div>
+<div class="row"><span class="name">    │   └── enums/                </span><span class="note">Nivel, Rol, Resultado, TipoAlerta</span></div>
+<div class="row"><span class="name dir">    ├── reader/                   </span><span class="note">LectorRFID, SimuladorLectorRFID, LecturaRFID <span class="tag new">NUEVO</span></span></div>
+<div class="row"><span class="name dir">    ├── repository/               </span><span class="note">Interfaces · ZonaRepository <span class="tag new">NUEVO</span></span></div>
+<div class="row"><span class="name">    │   └── jdbc/                 </span><span class="note">ConexionDB, Jdbc*Repository, JdbcZonaRepository <span class="tag new">NUEVO</span>, DatosAccesoException <span class="tag new">NUEVO</span></span></div>
+<div class="row"><span class="name dir">    ├── service/                  </span><span class="note">ControlAcceso, DetectorAnomalias, Cripto, Reporte, ResultadoLectura <span class="tag new">NUEVO</span></span></div>
+<div class="row"><span class="name dir">    ├── report/                   </span><span class="note">ReporteGenerator <span class="tag new">NUEVO</span>, PdfReporteGenerator, DatosReporte <span class="tag new">NUEVO</span>, FilaRegistro <span class="tag new">NUEVO</span></span></div>
+<div class="row"><span class="name dir">    └── ui/                       </span><span class="note">VentanaPrincipal <span class="tag new">NUEVO</span>, ConsolaApp</span></div>
+<div class="row"><span class="name">src/main/resources/            </span><span class="note">schema.sql (tablas), seed.sql (datos de prueba)</span></div>
+<div class="row"><span class="name">src/test/java/...             </span><span class="note"><span class="tag new">NUEVO</span> 11 pruebas con JUnit 5</span></div>
+</div>
+</section>
+
+<!-- =============================================================== -->
+<section id="archivos">
+  <h2><span class="num">08</span> Archivo por archivo</h2>
+  <p class="sub">Haz clic en cada paquete para ver qué hace cada clase.</p>
+
+  <details class="acc" open>
+    <summary><code>Main</code> y <code>config</code> <span class="hint">· arranque y armado</span></summary>
+    <div class="body">
+      <div class="file"><h5>Main.java</h5>
+        <p>Crea <code>AppConfig</code>, inicializa la BD y abre la ventana Swing, o la consola si se pasó <code>--consola</code> o no hay pantalla. La ventana se crea con <code>SwingUtilities.invokeLater</code> porque Swing exige manejar toda la interfaz desde su propio hilo (el <i>Event Dispatch Thread</i>).</p></div>
+      <div class="file"><h5>config/AppConfig.java</h5>
+        <p>Es la "raíz de composición" y hace dos cosas:</p>
+        <ul>
+          <li><b>Parámetros:</b> URL de la BD, umbral de intentos (3), ventana de tiempo (5 min), horario laboral (06:00–20:00) y carpeta de reportes.</li>
+          <li><b>Armado:</b> <code>ConexionDB</code> → repositorios → <code>CriptoService</code> y <code>DetectorAnomalias</code> → servicios → simulador.</li>
+          <li>Tiene un segundo constructor, <code>AppConfig(String url)</code>, que usan los tests para trabajar con una BD limpia.</li>
+        </ul>
+        <div class="note-box">Si se cambia H2 por MySQL, PDF por CSV o el simulador por un lector real, <b>este es el único archivo que hay que tocar</b>.</div>
+      </div>
+    </div>
+  </details>
+
+  <details class="acc">
+    <summary><code>model</code> <span class="hint">· el dominio</span></summary>
+    <div class="body">
+      <div class="file"><h5>Trabajador <span class="tag info">clase</span></h5>
+        <p>Valida en el constructor que la cédula y el nombre no estén vacíos. Contiene la regla <code>puedeIngresarA(Zona)</code>. Dos trabajadores son iguales si tienen la misma <b>cédula</b>.</p></div>
+      <div class="file"><h5>TarjetaRFID <span class="tag info">clase</span></h5>
+        <p>Guarda <code>uidHash</code>, <b>no el UID</b>. Tiene <code>bloquear()</code> y <code>activar()</code>, y <code>getHashCorto()</code> para mostrarla en pantalla.</p></div>
+      <div class="file"><h5>Zona <span class="tag info">clase</span></h5>
+        <p>Su <code>codigo</code> (ej. <code>Z-BOD</code>) es lo que "conoce" el lector de la puerta. Su <code>toString()</code> se usa directamente en el combo de la ventana.</p></div>
+      <div class="file"><h5>RegistroAcceso <span class="tag new">record</span></h5>
+        <p>Inmutable. <code>tarjetaId</code> es <code>null</code> si la tarjeta era desconocida. <code>conId()</code> devuelve una copia con el id que asignó la BD.</p></div>
+      <div class="file"><h5>Alerta <span class="tag new">record</span></h5>
+        <p>Inmutable. Apunta al registro que la provocó (<code>registroId</code>).</p></div>
+      <div class="file"><h5>enums/</h5>
+        <ul>
+          <li><code>Nivel</code>: <code>BASICO(1)</code>, <code>RESTRINGIDO(2)</code>, <code>CRITICO(3)</code>. Tiene <code>alcanza(requerido)</code>. El peso es explícito para que reordenar las constantes no cambie las reglas.</li>
+          <li><code>Rol</code>: obrero, operador, electricista, supervisor, visitante. Por ahora es solo informativo.</li>
+          <li><code>Resultado</code>: <code>PERMITIDO</code> y un <code>DENEGADO_*</code> por cada motivo, con <code>esPermitido()</code>.</li>
+          <li><code>TipoAlerta</code>: uno por cada regla del detector.</li>
+        </ul></div>
+    </div>
+  </details>
+
+  <details class="acc">
+    <summary><code>reader</code> <span class="hint">· lectores RFID</span></summary>
+    <div class="body">
+      <div class="file"><h5>LectorRFID <span class="tag info">interfaz</span></h5>
+        <p>Define <code>setOyente(Consumer&lt;LecturaRFID&gt;)</code> y <code>getNombre()</code>. Cualquier lector, simulado o real, cumple este contrato.</p></div>
+      <div class="file"><h5>LecturaRFID <span class="tag new">record</span></h5>
+        <p>Lo que entrega el lector: el UID leído, el código de la zona y la fecha y hora.</p></div>
+      <div class="file"><h5>SimuladorLectorRFID</h5>
+        <ul>
+          <li><code>UIDS_DEMO</code>: los UIDs "impresos" en las tarjetas de demo, que coinciden con <code>seed.sql</code>.</li>
+          <li><code>simularLectura(uid, zona[, hora])</code>: dispara el oyente.</li>
+          <li><code>generarUidAleatorio()</code>: crea tarjetas desconocidas para probar.</li>
+        </ul></div>
+    </div>
+  </details>
+
+  <details class="acc">
+    <summary><code>repository</code> <span class="hint">· acceso a datos</span></summary>
+    <div class="body">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Interfaz</th><th>Métodos</th></tr></thead>
+          <tbody>
+            <tr><td><code>TrabajadorRepository</code></td><td><code>buscarPorId</code>, <code>listarTodos</code></td></tr>
+            <tr><td><code>TarjetaRepository</code></td><td><code>buscarPorUidHash</code>, <code>listarTodas</code>, <code>actualizarEstado</code></td></tr>
+            <tr><td><code>ZonaRepository</code> <span class="tag new">NUEVO</span></td><td><code>buscarPorId</code>, <code>buscarPorCodigo</code>, <code>listarTodas</code></td></tr>
+            <tr><td><code>RegistroRepository</code></td><td><code>guardar</code>, <code>listarRecientes</code>, <code>contarDenegadosDesde</code></td></tr>
+            <tr><td><code>AlertaRepository</code></td><td><code>guardar</code>, <code>listarRecientes</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="caption">Las búsquedas devuelven <code>Optional&lt;T&gt;</code> en lugar de <code>null</code>.</p>
+
+      <div class="file"><h5>jdbc/ConexionDB</h5>
+        <p><code>abrir()</code> entrega una <b>conexión nueva</b> en cada llamada. <code>inicializar()</code> ejecuta <code>schema.sql</code> y <code>seed.sql</code>.</p></div>
+      <div class="file"><h5>jdbc/Jdbc*Repository</h5>
+        <p>Todos siguen el mismo patrón:</p>
+<pre><span class="k">try</span> (Connection cn = conexionDB.abrir();
+     PreparedStatement ps = cn.prepareStatement(SQL)) {
+    ps.setString(<span class="s">1</span>, valor);      <span class="c">// siempre "?" → evita SQL injection</span>
+    <span class="k">try</span> (ResultSet rs = ps.executeQuery()) {
+        ... mapear(rs) ...           <span class="c">// fila → objeto del modelo</span>
+    }
+} <span class="k">catch</span> (SQLException e) {
+    <span class="k">throw new</span> DatosAccesoException(<span class="s">"mensaje"</span>, e);
+}   <span class="c">// la conexión se cierra sola, aunque haya error</span></pre>
+        <ul>
+          <li>Los enums se guardan como texto (<code>name()</code>) y se leen con <code>valueOf()</code>.</li>
+          <li><code>guardar()</code> usa <code>RETURN_GENERATED_KEYS</code> para obtener el id.</li>
+          <li><code>wasNull()</code> se consulta <b>justo después</b> de <code>getLong("tarjeta_id")</code>, porque <code>getLong</code> devuelve 0 cuando la columna es NULL.</li>
+        </ul></div>
+      <div class="file"><h5>jdbc/DatosAccesoException <span class="tag new">NUEVO</span></h5>
+        <p>Envuelve la <code>SQLException</code> (que es <i>checked</i>) para que las interfaces de repositorio no queden atadas a JDBC.</p></div>
+    </div>
+  </details>
+
+  <details class="acc">
+    <summary><code>service</code> <span class="hint">· lógica de negocio</span></summary>
+    <div class="body">
+      <div class="file"><h5>ControlAccesoService</h5>
+        <p>El corazón del sistema. <code>procesarLectura()</code> implementa el <a href="#flujo">flujo completo</a>. También ofrece consultas para la UI: <code>buscarTitular</code>, <code>listarZonas</code>, <code>listarTarjetas</code>, <code>buscarTrabajador</code> y <code>alternarEstadoTarjeta</code>.</p></div>
+      <div class="file"><h5>DetectorAnomalias</h5>
+        <p>Recibe un registro ya guardado y <b>devuelve</b> alertas, <b>sin guardarlas</b>. Sus parámetros (umbral, ventana, horario) llegan por constructor.</p></div>
+      <div class="file"><h5>CriptoService</h5>
+        <ul>
+          <li><code>normalizarUid</code>: acepta el UID con <code>:</code>, espacios o minúsculas.</li>
+          <li><code>hashUid</code>: SHA-256 en hexadecimal (64 caracteres).</li>
+          <li><code>enmascararUid</code>: devuelve <code>04:A3:**:**</code> (todavía no se usa en la UI).</li>
+        </ul></div>
+      <div class="file"><h5>ReporteService</h5>
+        <p><code>registrosDetallados()</code> convierte ids en nombres cargando zonas, tarjetas y trabajadores <b>una sola vez</b> en mapas, lo que evita el problema N+1. <code>generarReporte()</code> arma un <code>DatosReporte</code> y lo entrega al generador inyectado.</p></div>
+      <div class="file"><h5>ResultadoLectura <span class="tag new">record · NUEVO</span></h5>
+        <p>Lo que devuelve <code>procesarLectura</code>: el registro, el trabajador, la zona y las alertas, más <code>permitido()</code> y <code>mensaje()</code>.</p></div>
+    </div>
+  </details>
+
+  <details class="acc">
+    <summary><code>report</code> <span class="hint">· reportes</span></summary>
+    <div class="body">
+      <div class="file"><h5>ReporteGenerator <span class="tag info">interfaz</span> <span class="tag new">NUEVO</span></h5>
+        <p><code>getExtension()</code> y <code>generar(DatosReporte, OutputStream)</code>.</p></div>
+      <div class="file"><h5>PdfReporteGenerator</h5>
+        <p>Usa OpenPDF para generar el título, el resumen, la tabla de registros (con colores) y la tabla de alertas, con encabezados que se repiten en cada página.</p></div>
+      <div class="file"><h5>DatosReporte · FilaRegistro <span class="tag new">records · NUEVO</span></h5>
+        <p>Los datos ya preparados. <b>El generador nunca consulta la BD.</b> <code>FilaRegistro</code> lo usan tanto la tabla de la ventana como el PDF.</p></div>
+    </div>
+  </details>
+
+  <details class="acc">
+    <summary><code>ui</code> <span class="hint">· interfaces de usuario</span></summary>
+    <div class="body">
+      <div class="file"><h5>VentanaPrincipal <span class="tag new">NUEVO</span></h5>
+        <ul>
+          <li>Swing con el look &amp; feel Nimbus.</li>
+          <li>Panel del simulador, tres pestañas (registros, alertas y tarjetas) y botón de PDF.</li>
+          <li>Un <i>renderer</i> colorea la columna Resultado.</li>
+          <li>Registra el oyente: <code>lector.setOyente(l -&gt; mostrarResultado(controlAcceso.procesarLectura(l)))</code>.</li>
+        </ul></div>
+      <div class="file"><h5>ConsolaApp</h5>
+        <p>Un menú de texto con las mismas operaciones.</p></div>
+    </div>
+  </details>
+
+  <details class="acc">
+    <summary><code>resources</code> y <code>test</code> <span class="hint">· SQL y pruebas</span></summary>
+    <div class="body">
+      <div class="file"><h5>schema.sql · seed.sql</h5>
+        <p>Crean 5 tablas y un índice, y cargan 5 trabajadores, 4 zonas y 5 tarjetas. Las tarjetas se enlazan a su trabajador por cédula, con un subquery, sin escribir ids a mano.</p></div>
+      <div class="file"><h5>ControlAccesoServiceTest · PdfReporteGeneratorTest</h5>
+        <p>11 pruebas. Cada una usa una <b>BD en memoria nueva</b>, con nombre aleatorio. Cubren: acceso permitido, UID en cualquier formato, nivel insuficiente, tarjeta desconocida, tarjeta bloqueada, intentos repetidos, horario nocturno, bloqueo desde el servicio, nombres en el historial, zona inexistente y PDF válido.</p></div>
+    </div>
+  </details>
+</section>
+
+<!-- =============================================================== -->
+<section id="bd">
+  <h2><span class="num">09</span> Base de datos</h2>
+  <p class="sub">H2 en memoria (<code>jdbc:h2:mem:controlacceso;DB_CLOSE_DELAY=-1</code>). Se crea al arrancar y se borra al cerrar.</p>
+
+  <div class="er">
+    <div class="ent"><h4>trabajador</h4><ul>
+      <li><span class="pk">id</span><em>PK</em></li><li>cedula<em>UNIQUE</em></li><li>nombre</li><li>rol<em>enum</em></li><li>nivel_acceso<em>enum</em></li></ul></div>
+    <div class="ent"><h4>tarjeta_rfid</h4><ul>
+      <li><span class="pk">id</span><em>PK</em></li><li>uid_hash<em>UNIQUE · SHA-256</em></li><li><span class="fk">trabajador_id</span><em>FK → trabajador</em></li><li>activa</li><li>fecha_emision</li></ul></div>
+    <div class="ent"><h4>zona</h4><ul>
+      <li><span class="pk">id</span><em>PK</em></li><li>codigo<em>UNIQUE</em></li><li>nombre</li><li>nivel_requerido<em>enum</em></li></ul></div>
+    <div class="ent"><h4>registro_acceso</h4><ul>
+      <li><span class="pk">id</span><em>PK</em></li><li>uid_hash</li><li><span class="fk">tarjeta_id</span><em>FK · NULL si desconocida</em></li><li><span class="fk">zona_id</span><em>FK → zona</em></li><li>fecha_hora</li><li>resultado<em>enum</em></li></ul></div>
+    <div class="ent"><h4>alerta</h4><ul>
+      <li><span class="pk">id</span><em>PK</em></li><li>tipo<em>enum</em></li><li>mensaje</li><li>fecha_hora</li><li><span class="fk">registro_id</span><em>FK → registro</em></li></ul></div>
+    <div class="card" style="align-self:start">
+      <h4>Relaciones</h4>
+      <ul class="check" style="font-size:14.5px">
+        <li>Un trabajador puede tener <b>varias tarjetas</b> (1:N), por ejemplo si pierde una.</li>
+        <li>Un registro tiene <b>0 o 1 tarjeta</b> y siempre una zona.</li>
+        <li>Una alerta pertenece a un registro.</li>
+        <li>Hay un índice en <code>(uid_hash, fecha_hora)</code> para contar intentos recientes.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="note-box info"><code>registro_acceso.uid_hash</code> se guarda <b>aunque la tarjeta no exista</b>, para poder detectar intentos repetidos de una tarjeta desconocida.</div>
+</section>
+
+<!-- =============================================================== -->
+<section id="cambios">
+  <h2><span class="num">10</span> Cambios realizados y a qué afectan</h2>
+  <p class="sub">Antes, el repositorio tenía la estructura de carpetas con <b>los 30 archivos vacíos</b> (0 bytes), un <code>pom.xml</code> sin dependencias útiles y <code>target/</code> versionado.</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Cambio</th><th>Archivos</th><th>A qué afecta / por qué</th></tr></thead>
+      <tbody>
+        <tr><td>Implementación de todas las clases</td><td>Los <code>.java</code> y <code>.sql</code> vacíos</td><td>Se respetaron los nombres y paquetes del autor.</td></tr>
+        <tr><td><b>Una conexión nueva por operación</b></td><td><code>ConexionDB</code>, <code>Jdbc*</code></td><td>Sin conexión global compartida: cada operación abre la suya y la cierra con <i>try-with-resources</i>. Es más seguro con varios hilos y no deja conexiones colgadas. Un pool se podría agregar dentro de <code>ConexionDB</code> sin tocar nada más.</td></tr>
+        <tr><td><b>ReporteGenerator como interfaz</b></td><td><code>report/</code>, <code>ReporteService</code>, <code>AppConfig</code></td><td>El servicio ya no depende de PDF. Para CSV basta una clase nueva y una línea en <code>AppConfig</code>.</td></tr>
+        <tr><td>ZonaRepository + JdbcZonaRepository</td><td>Nuevos</td><td>Existía el modelo <code>Zona</code> pero no había forma de leerlo; sin zonas no se puede validar un acceso.</td></tr>
+        <tr><td><code>Nivel</code> = solo nivel de acceso</td><td><code>Nivel</code></td><td>Antes era ambiguo (¿acceso o severidad de alerta?).</td></tr>
+        <tr><td>Nuevos records</td><td><code>LecturaRFID</code>, <code>ResultadoLectura</code>, <code>DatosReporte</code>, <code>FilaRegistro</code></td><td>Transportan datos entre capas sin exponer detalles internos.</td></tr>
+        <tr><td>DatosAccesoException</td><td><code>repository/jdbc/</code></td><td>Evita que <code>SQLException</code> llegue a las interfaces y a los servicios.</td></tr>
+        <tr><td>Ventana Swing</td><td><code>VentanaPrincipal</code></td><td>Es la UI de la demo; <code>ConsolaApp</code> se mantiene como alternativa.</td></tr>
+        <tr><td>Tests</td><td><code>src/test/</code></td><td>11 pruebas con JUnit 5.</td></tr>
+        <tr><td><code>pom.xml</code></td><td><code>pom.xml</code></td><td>Se agregaron H2, OpenPDF, <code>exec-maven-plugin</code> y <code>maven-shade-plugin</code> (jar ejecutable).</td></tr>
+        <tr><td><code>.gitignore</code> y quitar <code>target/</code></td><td>raíz</td><td><code>target/</code> se regenera al compilar. Además tenía una ruta absoluta de la máquina del autor y una clase <code>App</code> que ya no existe.</td></tr>
+        <tr><td>Archivos de Eclipse <b>se mantienen</b></td><td><code>.project</code>, <code>.classpath</code>, <code>.settings/</code></td><td>Para no romperle el proyecto a quien ya lo tiene abierto en Eclipse. A futuro conviene ignorarlos.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- =============================================================== -->
+<section id="decisiones">
+  <h2><span class="num">11</span> Decisiones de diseño (y por qué)</h2>
+  <div class="grid g2 qa">
+    <div class="card"><h4>¿Por qué guardar el hash y no el UID?</h4><p>El UID es lo que se necesita para clonar una tarjeta. Si alguien obtiene la BD, solo ve hashes. <b>Mejora pendiente:</b> usar HMAC-SHA256 con una clave secreta, porque los UIDs son cortos y un SHA-256 simple podría romperse por fuerza bruta.</p></div>
+    <div class="card"><h4>¿Por qué una conexión nueva por operación?</h4><p>Una única <code>Connection</code> compartida no es segura entre hilos, se puede caer y nadie sabe cuándo cerrarla. <i>try-with-resources</i> es el patrón estándar de JDBC; con MySQL se agregaría un pool (HikariCP) dentro de <code>ConexionDB</code>.</p></div>
+    <div class="card"><h4>¿Por qué clases para unas cosas y <code>record</code> para otras?</h4><p>Trabajador, Tarjeta y Zona son <b>entidades</b>: tienen identidad y cambian. Registro y Alerta son <b>eventos históricos</b>: lo que pasó no cambia.</p></div>
+    <div class="card"><h4>¿Por qué varios <code>DENEGADO_*</code>?</h4><p>Para que el historial y el reporte expliquen <b>el motivo</b>, y para que el detector reaccione distinto según el caso.</p></div>
+    <div class="card"><h4>¿Por qué el detector no guarda las alertas?</h4><p>Así tiene una sola responsabilidad (decidir) y es fácil de probar. Quién guarda y cuándo lo decide el servicio.</p></div>
+    <div class="card"><h4>¿Por qué de noche se permite y solo se alerta?</h4><p>Es una decisión provisional: bloquear de noche podría dejar afuera a un guardia o a una emergencia. Está entre las <a href="#preguntas">preguntas abiertas</a>.</p></div>
+    <div class="card"><h4>¿Por qué no Spring ni JPA?</h4><p>Es un reto de POO y Java. Hacer la inyección de dependencias y el JDBC a mano demuestra que se entienden los conceptos; un framework los escondería.</p></div>
+  </div>
+</section>
+
+<!-- =============================================================== -->
+<section id="limitaciones">
+  <h2><span class="num">12</span> Limitaciones de la demo</h2>
+  <p class="sub">Son intencionales para mantener la demo simple, y son tareas pendientes.</p>
+  <div class="card">
+    <ul class="check">
+      <li><b>La BD se borra al cerrar.</b> Para persistir: <code>jdbc:h2:./data/controlacceso</code> y hacer que los scripts no fallen si los datos ya existen.</li>
+      <li><b>No hay alta, edición ni baja</b> de trabajadores, zonas ni tarjetas desde la UI (solo bloquear o activar tarjetas).</li>
+      <li><b>No hay login</b> ni usuarios del sistema.</li>
+      <li><b>Los niveles son lineales</b>: con nivel Crítico se entra a todas las zonas críticas.</li>
+      <li><b>No se distingue entrada de salida</b>, así que no se sabe quién está dentro.</li>
+      <li>El horario es el mismo todos los días (no considera fines de semana ni feriados).</li>
+      <li>La alerta de intentos repetidos se dispara en cada intento a partir del tercero.</li>
+      <li>Las consultas corren en el hilo de la UI. Con una BD remota convendría usar <code>SwingWorker</code>.</li>
+      <li>Los parámetros son constantes en <code>AppConfig</code>; podrían ir a un <code>.properties</code>.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- =============================================================== -->
+<section id="extender">
+  <h2><span class="num">13</span> Cómo extender el proyecto</h2>
+  <div class="grid g2">
+    <div class="card"><h4>Reporte CSV</h4><p>1. Crear <code>CsvReporteGenerator implements ReporteGenerator</code>.<br>2. Pasarlo en <code>AppConfig</code> en lugar del PDF, o crear dos <code>ReporteService</code> con un botón cada uno.</p></div>
+    <div class="card"><h4>MySQL / PostgreSQL</h4><p>1. Agregar el driver al <code>pom.xml</code>.<br>2. Cambiar la URL, el usuario y la clave en <code>AppConfig</code>.<br>3. Revisar <code>schema.sql</code> (en PostgreSQL, <code>AUTO_INCREMENT</code> se escribe distinto).<br><b>Los repositorios no cambian.</b></p></div>
+    <div class="card"><h4>Lector real (Arduino + RC522)</h4><p>1. Crear <code>LectorSerialRFID implements LectorRFID</code>, con jSerialComm, que llame al oyente con cada UID.<br>2. Crearlo en <code>AppConfig</code> en lugar del simulador.</p></div>
+    <div class="card"><h4>Nueva regla de anomalía</h4><p>1. Agregar el valor a <code>TipoAlerta</code>.<br>2. Agregar el <code>if</code> en <code>DetectorAnomalias.analizar()</code>.<br>3. Agregar un test.</p></div>
+    <div class="card"><h4>CRUD de trabajadores</h4><p>1. Agregar <code>guardar</code>, <code>actualizar</code> y <code>eliminar</code> al repositorio.<br>2. Crear <code>TrabajadorService</code> con las validaciones.<br>3. Agregar una pestaña nueva en la ventana.</p></div>
+  </div>
+</section>
+
+<!-- =============================================================== -->
+<section id="preguntas">
+  <h2><span class="num">14</span> Preguntas abiertas para el equipo</h2>
+  <p class="sub">Decisiones que cambian el diseño y que conviene acordar antes de seguir.</p>
+  <div class="questions">
+    <div class="card"><h4>¿Cuál es el enunciado exacto del reto?</h4><p>¿Qué es obligatorio (PDF, BD real, UI gráfica, tests) y qué se evalúa?</p></div>
+    <div class="card"><h4>¿BD real o embebida?</h4><p>¿Basta con H2 en archivo, o se pide MySQL o PostgreSQL?</p></div>
+    <div class="card"><h4>¿Qué interfaz?</h4><p>¿Swing está bien, o se espera JavaFX, web o solo consola?</p></div>
+    <div class="card"><h4>¿Niveles o permisos por zona?</h4><p>Si un electricista no debe entrar a la grúa, hace falta una tabla <code>trabajador_zona</code>.</p></div>
+    <div class="card"><h4>¿El rol define el nivel?</h4><p>¿O siguen siendo independientes, como ahora?</p></div>
+    <div class="card"><h4>Fuera de horario: ¿bloquear o alertar?</h4><p>¿Hay turnos nocturnos? ¿Horario por zona?</p></div>
+    <div class="card"><h4>¿Registrar entrada y salida?</h4><p>¿Hay que saber quién está dentro ahora (aforo, evacuación)?</p></div>
+    <div class="card"><h4>¿Hardware real?</h4><p>¿Qué lector (RC522, PN532, USB tipo teclado)? Eso define la implementación de <code>LectorRFID</code>.</p></div>
+    <div class="card"><h4>¿Quién usa el sistema?</h4><p>¿Hace falta login con roles (guardia, administrador)?</p></div>
+    <div class="card"><h4>¿Qué debe tener el reporte?</h4><p>¿Filtros por fecha, trabajador o zona? ¿Horas trabajadas?</p></div>
+    <div class="card"><h4>¿Otras anomalías?</h4><p>Por ejemplo: la misma tarjeta en dos zonas en segundos (clonada), o alguien que entra y nunca sale.</p></div>
+  </div>
+</section>
+
+<!-- =============================================================== -->
+<section id="casos-de-uso">
+  <h2><span class="num">15</span> Casos de uso</h2>
+  <p class="sub">Qué puede hacer cada actor con el sistema. <b>CU-01 a CU-07</b> están implementados en la demo; <b>CU-08 a CU-15</b> son la propuesta para las siguientes iteraciones.
+  Versión en texto: <a href="https://github.com/JacoJean07/Control-Acceso-RFID/blob/ccr-d7d9911e-nawjhb/docs/CASOS_DE_USO.md"><code>docs/CASOS_DE_USO.md</code></a>.</p>
+  <div class="shot uc-diagram"><a href="img/casos-de-uso.svg"><img src="img/casos-de-uso.svg" alt="Diagrama de casos de uso con los actores Trabajador, Lector RFID, Guardia, Supervisor y Administrador" loading="lazy" width="960" height="730"></a></div>
+
+  <h3>Actores</h3>
+  <div class="grid g3">
+    <div class="card"><h4>Trabajador</h4><p>Pasa la tarjeta para entrar a una zona.</p></div>
+    <div class="card"><h4>Lector RFID <span class="tag info">sistema</span></h4><p>Lee el UID en la puerta y lo envía. En la demo es <code>SimuladorLectorRFID</code>.</p></div>
+    <div class="card"><h4>Guardia</h4><p>Vigila los accesos y las alertas en tiempo real.</p></div>
+    <div class="card"><h4>Supervisor</h4><p>Revisa el historial y genera reportes.</p></div>
+    <div class="card"><h4>Administrador</h4><p>Gestiona tarjetas, trabajadores, zonas y la configuración.</p></div>
+    <div class="card"><h4>Nota</h4><p>La demo no tiene login, así que quien la abre actúa como guardia, supervisor y administrador a la vez.</p></div>
+  </div>
+
+  <h3>Reglas de negocio</h3>
+  <div class="table-wrap"><table><thead><tr><th>Código</th><th>Regla</th></tr></thead><tbody>
+<tr><td><b>RN-01</b></td><td>Entra quien tenga un nivel <b>igual o mayor</b> al de la zona (Básico &lt; Restringido &lt; Crítico).</td></tr>
+<tr><td><b>RN-02</b></td><td>Una tarjeta no registrada nunca da acceso.</td></tr>
+<tr><td><b>RN-03</b></td><td>Una tarjeta bloqueada nunca da acceso.</td></tr>
+<tr><td><b>RN-04</b></td><td>Orden de revisión: existe → activa → nivel. El primer "no" decide el motivo.</td></tr>
+<tr><td><b>RN-05</b></td><td>Todo intento se registra, incluso con tarjetas desconocidas.</td></tr>
+<tr><td><b>RN-06</b></td><td>El UID nunca se guarda: solo el SHA-256 del UID normalizado.</td></tr>
+<tr><td><b>RN-07</b></td><td>3 o más denegados de la misma tarjeta en 5 minutos → <code>INTENTOS_REPETIDOS</code>.</td></tr>
+<tr><td><b>RN-08</b></td><td>Un permitido fuera de 06:00–20:00 entra, pero genera <code>FUERA_DE_HORARIO</code>.</td></tr>
+<tr><td><b>RN-09</b></td><td>Una tarjeta desconocida o bloqueada genera su alerta correspondiente.</td></tr>
+</tbody></table></div>
+<h3>Implementados</h3>
+<details class="acc uc"><summary><span class="tag ok">CU-01</span> Solicitar acceso a una zona <span class="hint">· Trabajador, Lector RFID · «include» CU-02</span></summary><div class="body">
+<div class="uc-meta">
+<div><span>Objetivo</span>Que el trabajador entre a una zona si tiene permiso.</div><div><span>Precondición</span>La zona existe y su lector funciona.</div><div><span>Postcondición</span>Queda el registro (CU-02) y, si corresponde, alertas (CU-03).</div>
+<div><span>Reglas</span>RN-01, RN-02, RN-03, RN-04, RN-06</div>
+</div><div class="uc-cols"><div><h5>Flujo principal</h5><ol class="uc-steps">
+<li>El trabajador acerca su tarjeta al lector de la zona.</li>
+<li>El lector envía una <code>LecturaRFID</code> (UID, zona, hora).</li>
+<li>El sistema busca la zona por su código.</li>
+<li>Calcula el hash del UID.</li>
+<li>Busca la tarjeta por hash y a su titular.</li>
+<li>Verifica que la tarjeta esté activa.</li>
+<li>Verifica que el nivel del trabajador alcance el de la zona.</li>
+<li>Resultado <b>PERMITIDO</b>.</li>
+<li>Incluye CU-02 (registrar el intento).</li>
+<li>Muestra el resultado en verde.</li>
+</ol></div><div><h5>Flujos alternativos</h5>
+<ul class="uc-alt">
+<li><b>3a</b> La zona no existe: Error; no se registra nada.</li>
+<li><b>4a</b> UID sin caracteres hexadecimales: Error "UID inválido"; no se registra.</li>
+<li><b>5a</b> La tarjeta no existe: <code>DENEGADO_TARJETA_DESCONOCIDA</code> → paso 9, en rojo.</li>
+<li><b>6a</b> Tarjeta bloqueada: <code>DENEGADO_TARJETA_INACTIVA</code> → paso 9.</li>
+<li><b>7a</b> Nivel insuficiente: <code>DENEGADO_NIVEL_INSUFICIENTE</code> → paso 9.</li>
+</ul>
+</div></div>
+<p class="uc-impl"><span>Implementación</span> <code>ControlAccesoService.procesarLectura()</code> / <code>evaluar()</code>, <code>CriptoService.hashUid()</code>, <code>Trabajador.puedeIngresarA()</code>, <code>Nivel.alcanza()</code>, <code>SimuladorLectorRFID</code></p><p class="uc-impl"><span>Tests</span> <code>permiteAccesoConNivelSuficiente</code>, <code>aceptaElUidEnCualquierFormato</code>, <code>niegaAccesoConNivelInsuficiente</code>, <code>tarjetaDesconocidaSeNiegaYGeneraAlerta</code>, <code>tarjetaBloqueadaSeNiega</code>, <code>zonaInexistenteLanzaExcepcion</code></p>
+</div></details>
+<details class="acc uc"><summary><span class="tag ok">CU-02</span> Registrar intento de acceso <span class="hint">· (sistema, dentro de CU-01) · incluido por CU-01</span></summary><div class="body">
+<div class="uc-meta">
+<div><span>Objetivo</span>Dejar constancia de cada intento para auditoría y para detectar anomalías.</div><div><span>Precondición</span>CU-01 ya decidió el resultado.</div><div><span>Postcondición</span>Hay una fila nueva en <code>registro_acceso</code>.</div>
+<div><span>Reglas</span>RN-05, RN-06</div>
+</div><div class="uc-cols"><div><h5>Flujo principal</h5><ol class="uc-steps">
+<li>Arma un <code>RegistroAcceso</code> (hash, tarjeta o vacío, zona, hora, resultado).</li>
+<li>Lo guarda en la BD.</li>
+<li>Recibe el id generado.</li>
+<li>Si hay anomalías, se extiende con CU-03.</li>
+</ol></div><div><h5>Flujos alternativos</h5>
+<ul class="uc-alt">
+<li><b>2a</b> Falla la base de datos: Se lanza <code>DatosAccesoException</code>; la lectura no se completa.</li>
+</ul>
+</div></div>
+<p class="uc-impl"><span>Implementación</span> <code>JdbcRegistroRepository.guardar()</code>, <code>RegistroAcceso.conId()</code></p><p class="uc-impl"><span>Tests</span> Cubierto por todo <code>ControlAccesoServiceTest</code></p>
+</div></details>
+<details class="acc uc"><summary><span class="tag ok">CU-03</span> Detectar anomalías y generar alertas <span class="hint">· (sistema); las ve el Guardia · «extend» CU-02</span></summary><div class="body">
+<div class="uc-meta">
+<div><span>Objetivo</span>Avisar de situaciones sospechosas, aunque no siempre impliquen negar el acceso.</div><div><span>Precondición</span>El registro ya está guardado y tiene id.</div><div><span>Postcondición</span>Cero o más alertas guardadas, enlazadas al registro.</div>
+<div><span>Reglas</span>RN-07, RN-08, RN-09</div>
+</div><div class="uc-cols"><div><h5>Flujo principal</h5><ol class="uc-steps">
+<li>Analiza el registro recién guardado.</li>
+<li>Tarjeta desconocida → alerta <code>TARJETA_DESCONOCIDA</code>.</li>
+<li>Tarjeta bloqueada → alerta <code>TARJETA_INACTIVA</code>.</li>
+<li>Si fue denegado: cuenta los denegados del hash en 5 min; si son 3 o más → <code>INTENTOS_REPETIDOS</code>.</li>
+<li>Si fue permitido fuera de 06:00–20:00 → <code>FUERA_DE_HORARIO</code>.</li>
+<li>Guarda cada alerta y la devuelve a la UI.</li>
+</ol></div><div><h5>Flujos alternativos</h5>
+<p class="caption" style="margin:0">No tiene. Un mismo intento puede generar varias alertas.</p>
+</div></div>
+<p class="uc-impl"><span>Implementación</span> <code>DetectorAnomalias.analizar()</code>, <code>AlertaRepository.guardar()</code>, <code>RegistroRepository.contarDenegadosDesde()</code></p><p class="uc-impl"><span>Tests</span> <code>tresIntentosFallidosGeneranAlertaDeIntentosRepetidos</code>, <code>accesoNocturnoSePermitePeroGeneraAlerta</code> y otros</p>
+</div></details>
+<details class="acc uc"><summary><span class="tag ok">CU-04</span> Consultar historial de accesos <span class="hint">· Guardia, Supervisor</span></summary><div class="body">
+<div class="uc-meta">
+<div><span>Objetivo</span>Ver quién intentó entrar, dónde, cuándo y con qué resultado.</div><div><span>Precondición</span>Ninguna (no hay login).</div><div><span>Postcondición</span>Ninguna: es una consulta.</div>
+</div><div class="uc-cols"><div><h5>Flujo principal</h5><ol class="uc-steps">
+<li>Abre la pestaña <b>Registros de acceso</b> (consola: opción 2).</li>
+<li>El sistema trae los últimos 200 registros (20 en consola).</li>
+<li>Reemplaza los ids por nombres.</li>
+<li>Muestra la tabla de nuevo a viejo, en verde o rojo.</li>
+<li>La tabla se actualiza sola después de cada lectura.</li>
+</ol></div><div><h5>Flujos alternativos</h5>
+<ul class="uc-alt">
+<li><b>2a</b> No hay registros: Tabla vacía.</li>
+<li><b>3a</b> Tarjeta desconocida: Aparece "Desconocido".</li>
+</ul>
+</div></div>
+<p class="uc-impl"><span>Implementación</span> <code>ReporteService.registrosDetallados()</code>, <code>VentanaPrincipal.refrescarTablas()</code></p><p class="uc-impl"><span>Tests</span> <code>elHistorialMuestraNombresYDesconocidos</code></p>
+</div></details>
+<details class="acc uc"><summary><span class="tag ok">CU-05</span> Consultar alertas <span class="hint">· Guardia</span></summary><div class="body">
+<div class="uc-meta">
+<div><span>Objetivo</span>Revisar las anomalías detectadas.</div><div><span>Precondición</span>Ninguna.</div><div><span>Postcondición</span>Ninguna.</div>
+</div><div class="uc-cols"><div><h5>Flujo principal</h5><ol class="uc-steps">
+<li>Abre la pestaña <b>Alertas</b> (consola: opción 3).</li>
+<li>Ve fecha y hora, tipo y detalle, de la más nueva a la más vieja.</li>
+</ol></div><div><h5>Flujos alternativos</h5>
+<ul class="uc-alt">
+<li><b>2a</b> No hay alertas: Tabla vacía.</li>
+</ul>
+</div></div>
+<p class="uc-impl"><span>Implementación</span> <code>ReporteService.alertasRecientes()</code></p><p class="uc-impl"><span>Tests</span> Indirecto (tests de CU-03)</p>
+</div></details>
+<details class="acc uc"><summary><span class="tag ok">CU-06</span> Bloquear / activar tarjeta <span class="hint">· Administrador</span></summary><div class="body">
+<div class="uc-meta">
+<div><span>Objetivo</span>Impedir o volver a permitir el uso de una tarjeta (por ejemplo, si se pierde).</div><div><span>Precondición</span>La tarjeta existe.</div><div><span>Postcondición</span>El estado queda guardado y las lecturas siguientes lo respetan.</div>
+<div><span>Reglas</span>RN-03</div>
+</div><div class="uc-cols"><div><h5>Flujo principal</h5><ol class="uc-steps">
+<li>Abre la pestaña <b>Tarjetas</b>.</li>
+<li>Ve el inicio del hash, el titular, el estado y la emisión.</li>
+<li>Selecciona una fila y presiona "Bloquear / activar".</li>
+<li>El sistema cambia el estado y lo guarda.</li>
+<li>Refresca la tabla.</li>
+</ol></div><div><h5>Flujos alternativos</h5>
+<ul class="uc-alt">
+<li><b>3a</b> No hay fila seleccionada: Mensaje "Seleccione una tarjeta".</li>
+</ul>
+</div></div>
+<p class="uc-impl"><span>Implementación</span> <code>ControlAccesoService.alternarEstadoTarjeta()</code>, <code>TarjetaRFID.bloquear()</code> / <code>activar()</code>, <code>TarjetaRepository.actualizarEstado()</code></p><p class="uc-impl"><span>Tests</span> <code>bloquearUnaTarjetaImpideElAcceso</code></p>
+</div></details>
+<details class="acc uc"><summary><span class="tag ok">CU-07</span> Generar reporte PDF <span class="hint">· Supervisor</span></summary><div class="body">
+<div class="uc-meta">
+<div><span>Objetivo</span>Obtener un documento con los accesos y las alertas.</div><div><span>Precondición</span>Ninguna (puede salir vacío).</div><div><span>Postcondición</span>Existe <code>reportes/reporte-AAAAMMDD-HHMMSS.pdf</code>.</div>
+</div><div class="uc-cols"><div><h5>Flujo principal</h5><ol class="uc-steps">
+<li>Presiona "Generar reporte PDF" (consola: opción 4).</li>
+<li>El sistema reúne hasta 500 registros y 500 alertas.</li>
+<li>Arma un <code>DatosReporte</code>.</li>
+<li><code>PdfReporteGenerator</code> escribe el archivo (crea la carpeta si no existe).</li>
+<li>Muestra la ruta y abre el PDF si se puede.</li>
+</ol></div><div><h5>Flujos alternativos</h5>
+<ul class="uc-alt">
+<li><b>4a</b> No se puede escribir el archivo: Mensaje de error.</li>
+<li><b>5a</b> Sin visor disponible: Solo se muestra la ruta.</li>
+</ul>
+</div></div>
+<p class="uc-impl"><span>Implementación</span> <code>ReporteService.generarReporte()</code>, <code>ReporteGenerator</code>, <code>PdfReporteGenerator</code></p><p class="uc-impl"><span>Tests</span> <code>generaUnPdfValido</code></p>
+</div></details>
+<h3>Pendientes</h3><div class="grid g2">
+<div class="card uc-pend"><h4><span class="tag pend">CU-08</span> Iniciar sesión</h4><p class="who-line">Todo el personal · resolver antes la pregunta abierta #9</p><p>Login al abrir; según el rol se habilitan o esconden acciones. Contraseñas con BCrypt.</p><p class="uc-impl" style="margin-top:8px"><span>Cambios</span> Tabla <code>usuario</code>, <code>AutenticacionService</code>, <code>LoginDialog</code></p></div>
+<div class="card uc-pend"><h4><span class="tag pend">CU-09</span> Gestionar trabajadores</h4><p class="who-line">Administrador</p><p>Alta, edición y baja lógica, con validación de cédula. Al dar de baja se bloquean sus tarjetas.</p><p class="uc-impl" style="margin-top:8px"><span>Cambios</span> <code>TrabajadorService</code>, columna <code>activo</code>, pestaña nueva</p></div>
+<div class="card uc-pend"><h4><span class="tag pend">CU-10</span> Gestionar zonas</h4><p class="who-line">Administrador</p><p>Crear y editar zonas (código único, nivel y, a futuro, horario).</p><p class="uc-impl" style="margin-top:8px"><span>Cambios</span> <code>ZonaService</code>, <code>ZonaRepository.guardar()</code></p></div>
+<div class="card uc-pend"><h4><span class="tag pend">CU-11</span> Emitir y asignar tarjeta</h4><p class="who-line">Administrador + Lector</p><p>Acercar la tarjeta nueva, calcular el hash, verificar que no exista y asociarla. Ofrece bloquear la anterior.</p><p class="uc-impl" style="margin-top:8px"><span>Cambios</span> <code>TarjetaService</code>, <code>TarjetaRepository.guardar()</code></p></div>
+<div class="card uc-pend"><h4><span class="tag pend">CU-12</span> Registrar salida de la obra</h4><p class="who-line">Trabajador + Lector · resolver antes la pregunta abierta #7</p><p>Lector de salida con el sentido <code>SALIDA</code>; vista "Personas dentro ahora".</p><p class="uc-impl" style="margin-top:8px"><span>Cambios</span> Enum <code>Sentido</code>, columna <code>sentido</code></p></div>
+<div class="card uc-pend"><h4><span class="tag pend">CU-13</span> Reporte con filtros</h4><p class="who-line">Supervisor · resolver antes la pregunta abierta #10</p><p>Rango de fechas, trabajador, zona y resultado; PDF o CSV.</p><p class="uc-impl" style="margin-top:8px"><span>Cambios</span> <code>FiltroRegistro</code>, <code>CsvReporteGenerator</code></p></div>
+<div class="card uc-pend"><h4><span class="tag pend">CU-14</span> Atender / cerrar alerta</h4><p class="who-line">Guardia</p><p>Marcar la alerta como atendida con un comentario; destacar las pendientes.</p><p class="uc-impl" style="margin-top:8px"><span>Cambios</span> Columnas <code>estado</code>, <code>atendida_por</code>, <code>comentario</code></p></div>
+<div class="card uc-pend"><h4><span class="tag pend">CU-15</span> Configurar parámetros</h4><p class="who-line">Administrador · resolver antes la pregunta abierta #6</p><p>Cambiar el horario, el umbral y la ventana de tiempo sin recompilar.</p><p class="uc-impl" style="margin-top:8px"><span>Cambios</span> <code>application.properties</code> o tabla <code>configuracion</code></p></div>
+</div></section>
+<!-- =============================================================== -->
+<section id="mejoras">
+  <h2><span class="num">16</span> Posibles mejoras</h2>
+  <p class="sub">Ideas para crecer después de la demo. <b>Esfuerzo:</b> S = horas · M = 1–3 días · L = una semana o más.</p>
+  <div class="grid g2 mejoras">
+<div class="card"><h4>Funcionalidad</h4><ul class="mej">
+<li><span class="prio hi">Alta</span><span class="mt">Implementar CU-08 a CU-15</span><span class="eff">L</span></li>
+<li><span class="prio hi">Alta</span><span class="mt">Permisos por zona (<code>trabajador_zona</code>)</span><span class="eff">M</span></li>
+<li><span class="prio hi">Alta</span><span class="mt">Panel "Quién está dentro ahora"</span><span class="eff">M</span></li>
+<li><span class="prio mid">Media</span><span class="mt">Vencimiento de tarjetas para visitantes</span><span class="eff">S</span></li>
+<li><span class="prio mid">Media</span><span class="mt">Horarios por zona, turnos y feriados</span><span class="eff">M</span></li>
+<li><span class="prio mid">Media</span><span class="mt">Anti-passback (dos entradas sin salida)</span><span class="eff">M</span></li>
+<li><span class="prio mid">Media</span><span class="mt">Detectar tarjeta clonada (dos zonas en segundos)</span><span class="eff">S</span></li>
+<li><span class="prio mid">Media</span><span class="mt">Alerta de "entró y nunca salió"</span><span class="eff">S</span></li>
+<li><span class="prio lo">Baja</span><span class="mt">Panel de estadísticas</span><span class="eff">M</span></li>
+<li><span class="prio lo">Baja</span><span class="mt">Exportar a CSV o Excel</span><span class="eff">S</span></li>
+<li><span class="prio lo">Baja</span><span class="mt">Notificar por correo o Telegram</span><span class="eff">M</span></li>
+</ul></div>
+<div class="card"><h4>Seguridad</h4><ul class="mej">
+<li><span class="prio hi">Alta</span><span class="mt">HMAC-SHA256 con clave secreta en lugar de SHA-256</span><span class="eff">S</span></li>
+<li><span class="prio hi">Alta</span><span class="mt">Login con BCrypt y roles</span><span class="eff">M</span></li>
+<li><span class="prio mid">Media</span><span class="mt">Auditoría de acciones administrativas</span><span class="eff">S</span></li>
+<li><span class="prio mid">Media</span><span class="mt">Tarjetas criptográficas (DESFire / NTAG 424): el UID se puede clonar</span><span class="eff">L</span></li>
+<li><span class="prio lo">Baja</span><span class="mt">Enmascarar el UID en logs y UI</span><span class="eff">S</span></li>
+</ul></div>
+<div class="card"><h4>Código y arquitectura</h4><ul class="mej">
+<li><span class="prio hi">Alta</span><span class="mt">Inyectar <code>java.time.Clock</code> para probar horarios</span><span class="eff">S</span></li>
+<li><span class="prio hi">Alta</span><span class="mt">Configuración en <code>application.properties</code></span><span class="eff">S</span></li>
+<li><span class="prio mid">Media</span><span class="mt">Logging con SLF4J + Logback</span><span class="eff">S</span></li>
+<li><span class="prio mid">Media</span><span class="mt"><code>SwingWorker</code> para no congelar la UI</span><span class="eff">S</span></li>
+<li><span class="prio mid">Media</span><span class="mt">Migraciones con Flyway</span><span class="eff">S</span></li>
+<li><span class="prio lo">Baja</span><span class="mt">Pool HikariCP en <code>ConexionDB</code></span><span class="eff">S</span></li>
+</ul></div>
+<div class="card"><h4>Datos</h4><ul class="mej">
+<li><span class="prio hi">Alta</span><span class="mt">Persistir datos (H2 en archivo o PostgreSQL)</span><span class="eff">S</span></li>
+<li><span class="prio hi">Alta</span><span class="mt">Baja lógica en lugar de borrar</span><span class="eff">S</span></li>
+<li><span class="prio lo">Baja</span><span class="mt">Retención y archivo de registros viejos</span><span class="eff">S</span></li>
+<li><span class="prio lo">Baja</span><span class="mt">Respaldos automáticos</span><span class="eff">S</span></li>
+</ul></div>
+<div class="card"><h4>Interfaz</h4><ul class="mej">
+<li><span class="prio mid">Media</span><span class="mt">Look moderno con FlatLaf</span><span class="eff">S</span></li>
+<li><span class="prio mid">Media</span><span class="mt">Búsqueda y filtros en tablas</span><span class="eff">S</span></li>
+<li><span class="prio lo">Baja</span><span class="mt">Modo kiosko verde/rojo con sonido</span><span class="eff">M</span></li>
+<li><span class="prio lo">Baja</span><span class="mt">Contador de alertas pendientes</span><span class="eff">S</span></li>
+</ul></div>
+<div class="card"><h4>Calidad y automatización</h4><ul class="mej">
+<li><span class="prio hi">Alta</span><span class="mt">GitHub Actions con <code>mvn test</code> en cada push</span><span class="eff">S</span></li>
+<li><span class="prio mid">Media</span><span class="mt">Tests aislados del detector con repositorios falsos</span><span class="eff">S</span></li>
+<li><span class="prio lo">Baja</span><span class="mt">Cobertura con JaCoCo</span><span class="eff">S</span></li>
+<li><span class="prio lo">Baja</span><span class="mt">Formato automático (Spotless/Checkstyle)</span><span class="eff">S</span></li>
+<li><span class="prio lo">Baja</span><span class="mt">Publicar el <code>.jar</code> en Releases</span><span class="eff">S</span></li>
+</ul></div>
+</div>
+  <h3>Hardware real</h3>
+  <div class="table-wrap"><table><thead><tr><th>Opción</th><th>Cómo se integra</th><th>Esfuerzo</th></tr></thead><tbody>
+    <tr><td><b>Lector USB tipo teclado</b></td><td>El lector "escribe" el UID y un Enter: basta un campo de texto con foco. Es la opción más simple.</td><td>S</td></tr>
+    <tr><td><b>Arduino + RC522</b> (USB/serial)</td><td><code>LectorSerialRFID implements LectorRFID</code> usando jSerialComm.</td><td>M</td></tr>
+    <tr><td><b>ESP32 + RC522</b> (WiFi)</td><td>Envía el UID por HTTP; requiere una pequeña API REST (Javalin o Spring Boot).</td><td>L</td></tr>
+    <tr><td><b>Cerradura + relé, LED y buzzer</b></td><td>Abre físicamente la puerta cuando el resultado es PERMITIDO.</td><td>M</td></tr>
+  </tbody></table></div>
+
+  <h3>Hoja de ruta sugerida</h3>
+  <ol class="roadmap">
+    <li><b>Fase 1 · Base sólida</b><span>Persistir datos, configuración externa, <code>Clock</code>, HMAC, GitHub Actions.</span></li>
+    <li><b>Fase 2 · Gestión</b><span>CU-08 login, CU-09 a CU-11 altas y asignaciones, CU-14 atención de alertas.</span></li>
+    <li><b>Fase 3 · Operación real</b><span>CU-12 entrada/salida y presentes, lector USB o Arduino, permisos por zona.</span></li>
+    <li><b>Fase 4 · Escalar</b><span>API REST, frontend web o móvil, PostgreSQL, notificaciones, varias obras.</span></li>
+  </ol>
+</section>
+
+  </main>
+</div>
+
+<footer>
+  <div class="wrap">
+    Control de Acceso RFID · Proyecto académico de POO en Java · Licencia GPL-3.0 ·
+    <a href="https://github.com/JacoJean07/Control-Acceso-RFID">Código en GitHub</a>
+  </div>
+</footer>
+
+<div class="lightbox" id="lightbox" role="dialog" aria-label="Imagen ampliada"><img alt=""></div>
+
+<script>
+// Tema claro / oscuro (recuerda la eleccion en este navegador)
+(function () {
+  var root = document.documentElement, btn = document.getElementById('theme');
+  try { var t = localStorage.getItem('tema'); if (t) root.setAttribute('data-theme', t); } catch (e) {}
+  btn.addEventListener('click', function () {
+    var oscuro = root.getAttribute('data-theme') === 'dark' ||
+      (!root.getAttribute('data-theme') && matchMedia('(prefers-color-scheme: dark)').matches);
+    var nuevo = oscuro ? 'light' : 'dark';
+    root.setAttribute('data-theme', nuevo);
+    try { localStorage.setItem('tema', nuevo); } catch (e) {}
+  });
+})();
+
+// Pestanas de capturas
+document.querySelectorAll('.tab').forEach(function (tab) {
+  tab.addEventListener('click', function () {
+    document.querySelectorAll('.tab').forEach(function (t) {
+      var activo = t === tab;
+      t.setAttribute('aria-selected', activo);
+      document.getElementById(t.getAttribute('aria-controls')).hidden = !activo;
+    });
+  });
+});
+
+// Lightbox para las imagenes PNG
+var lb = document.getElementById('lightbox'), lbImg = lb.querySelector('img');
+document.querySelectorAll('.shot a').forEach(function (a) {
+  if (!/\.(png|svg)$/.test(a.getAttribute('href'))) return;
+  a.addEventListener('click', function (e) {
+    e.preventDefault();
+    lbImg.src = a.getAttribute('href');
+    lbImg.alt = a.querySelector('img').alt;
+    lb.classList.add('open');
+  });
+});
+lb.addEventListener('click', function () { lb.classList.remove('open'); });
+document.addEventListener('keydown', function (e) { if (e.key === 'Escape') lb.classList.remove('open'); });
+
+// Resaltar la seccion actual en el indice
+var enlaces = document.querySelectorAll('.toc a');
+var obs = new IntersectionObserver(function (entradas) {
+  entradas.forEach(function (en) {
+    if (en.isIntersecting) {
+      enlaces.forEach(function (a) { a.classList.toggle('active', a.getAttribute('href') === '#' + en.target.id); });
+    }
+  });
+}, { rootMargin: '-30% 0px -65% 0px' });
+document.querySelectorAll('main section').forEach(function (s) { obs.observe(s); });
+</script>
+</body>
+</html>
